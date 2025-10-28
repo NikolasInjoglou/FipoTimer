@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <title>Weekly Time Tracker</title>
+    <style>
+        body { font-family: sans-serif; padding: 30px; background: #f9fafb; }
+        .bar { width: 100%; height: 30px; background: #ddd; margin-bottom: 10px; border-radius: 10px; overflow: hidden; }
+        .gameFill { height: 30px; background: #b925e4; width: 0; transition: width 0.4s; }
+        .cartoonFill { height: 30px; background: #71b9fd; width: 0; transition: width 0.4s; }
+        .fill { height: 30px; background: #a51221; width: 0; transition: width 0.4s; }
+        h2 { margin-top: 40px; }
+        button { margin-right: 10px; padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button.start { background-color: #03b303; color: white; }
+        button.stop { background-color: #f44336; color: white; }
+        button.add { background-color: #71b9fd; color: white; }
+        input { padding: 5px; width: 80px; margin-right: 8px; }
+        .section { margin-bottom: 60px; }
+        .finished { color: red; font-size: 1.5em; font-weight: bold; margin-top: 10px; }
+        .timer-text { margin-top: 5px; }
+    </style>
+</head>
+<body>
+<h1>📅 Εβδομαδιαίος Χρόνος Cartoon και Παιχνιδιού</h1>
+
+<div class="section" id="gameSection">
+    <h2>🎮 Χρονόμετρο Παιχνιδιού</h2>
+    <div class="bar"><div id="gameFill" class="gameFill"></div></div>
+    <button class="start" onclick="start('game')">▶️  🎮  Αρχή</button>
+    <button class="stop" onclick="stopTimer('game')">⏹️  🎮  Στοπ</button>
+    <input id="gameInput" type="number" placeholder="Λεπτά">
+    <button class="add" onclick="addTime('game')">Προσθήκη</button>
+    <p id="gameText" class="timer-text"></p>
+    <p id="gameEndMsg" class="finished"></p>
+    <p id="gameStartInfo" class="timer-text"></p>
+    <p id="gameStopInfo" class="timer-text"></p>
+    <p id="gameDurationInfo" class="timer-text"></p>
+</div>
+
+<div class="section" id="cartoonSection">
+    <h2>📺 Χρονόμετρο Cartoon</h2>
+    <div class="bar"><div id="cartoonFill" class="cartoonFill"></div></div>
+    <button class="start" onclick="start('cartoon')">▶️  📺  Αρχή</button>
+    <button class="stop" onclick="stopTimer('cartoon')">⏹️  📺  Στοπ</button>
+    <input id="cartoonInput" type="number" placeholder="Λεπτά">
+    <button class="add" onclick="addTime('cartoon')">Προσθήκη</button>
+    <p id="cartoonText" class="timer-text"></p>
+    <p id="cartoonEndMsg" class="finished"></p>
+    <p id="cartoonStartInfo" class="timer-text"></p>
+    <p id="cartoonStopInfo" class="timer-text"></p>
+    <p id="cartoonDurationInfo" class="timer-text"></p>
+</div>
+
+<div>
+    <h3>📜 Ιστορικό Παιχνιδιών</h3>
+    <div id="gameSessions"></div>
+</div>
+
+<div>
+    <h3>📜 Ιστορικό Cartoon</h3>
+    <div id="cartoonSessions"></div>
+</div>
+
+<script>
+    let timers = { game: null, cartoon: null };
+    let status = {};
+    let config = {};
+
+    // ---- Helpers ----
+    function formatTime(seconds) {
+        const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+        const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+        const s = (seconds % 60).toString().padStart(2, '0');
+        return `${h}:${m}:${s}`;
+    }
+
+    async function loadConfig() {
+        const res = await fetch('/api/time/config');
+        config = await res.json();
+    }
+
+    async function loadStatus() {
+        const res = await fetch("/api/time/status");
+        status = await res.json();
+        updateBars();
+        renderSessions();
+    }
+
+    function renderSessions() {
+        const fmt = new Intl.DateTimeFormat('el-GR', {
+            weekday: 'short', day: '2-digit', month: 'short',
+            hour: '2-digit', minute: '2-digit', hour12: false
+        });
+        const fmtDur = (s) => s > 0 ? formatTime(s) : '';
+
+        const gameList = status.gameSessions?.map(
+            s => `<li>${fmt.format(new Date(s.start))} → ${fmt.format(new Date(s.stop))} | ${fmtDur(s.durationSec)}</li>`
+        ).join('') || '';
+
+        const cartoonList = status.cartoonSessions?.map(
+            s => `<li>${fmt.format(new Date(s.start))} → ${fmt.format(new Date(s.stop))} | ${fmtDur(s.durationSec)}</li>`
+        ).join('') || '';
+
+        document.getElementById('gameSessions').innerHTML = `<ul>${gameList}</ul>`;
+        document.getElementById('cartoonSessions').innerHTML = `<ul>${cartoonList}</ul>`;
+    }
+
+    function updateBars() {
+        const gamePct = (status.usedGame / config.totalGame) * 100;
+        const cartoonPct = (status.usedCartoon / config.totalCartoon) * 100;
+        document.getElementById('gameFill').style.width = gamePct + '%';
+        document.getElementById('cartoonFill').style.width = cartoonPct + '%';
+
+        const gameRemain = Math.max(config.totalGame - status.usedGame, 0);
+        const cartoonRemain = Math.max(config.totalCartoon - status.usedCartoon, 0);
+
+        const fmt = new Intl.DateTimeFormat('el-GR', {
+            weekday: 'long', day: '2-digit', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', hour12: false
+        });
+
+        const fmtTime = (t) => t ? fmt.format(new Date(t)) : '';
+        const fmtDur = (s) => s > 0 ? formatTime(s) : '';
+
+        document.getElementById('gameText').innerText =
+            `Χρησιμοποιημένος: ${formatTime(status.usedGame)} / ${formatTime(config.totalGame)} (${gamePct.toFixed(1)}%)\n` +
+            `Υπολειπόμενος: ${formatTime(gameRemain)}`;
+
+        document.getElementById('cartoonText').innerText =
+            `Χρησιμοποιημένος: ${formatTime(status.usedCartoon)} / ${formatTime(config.totalCartoon)} (${cartoonPct.toFixed(1)}%)\n` +
+            `Υπολειπόμενος: ${formatTime(cartoonRemain)}`;
+
+        // Start / Stop / Duration
+        document.getElementById('gameStartInfo').innerText =
+            status.gameStartTime ? `Ξεκίνησε: ${fmtTime(status.gameStartTime)}` : '';
+        document.getElementById('gameStopInfo').innerText =
+            status.gameStopTime ? `Σταμάτησε: ${fmtTime(status.gameStopTime)}` : '';
+        document.getElementById('gameDurationInfo').innerText =
+            status.lastGameDurationSec > 0 ? `Διήρκησε: ${fmtDur(status.lastGameDurationSec)}` : '';
+
+        document.getElementById('cartoonStartInfo').innerText =
+            status.cartoonStartTime ? `Ξεκίνησε: ${fmtTime(status.cartoonStartTime)}` : '';
+        document.getElementById('cartoonStopInfo').innerText =
+            status.cartoonStopTime ? `Σταμάτησε: ${fmtTime(status.cartoonStopTime)}` : '';
+        document.getElementById('cartoonDurationInfo').innerText =
+            status.lastCartoonDurationSec > 0 ? `Διήρκησε: ${fmtDur(status.lastCartoonDurationSec)}` : '';
+
+        // End messages
+        document.getElementById('gameEndMsg').innerText =
+            status.usedGame >= config.totalGame ? '⛔ Τελείωσε ο χρόνος 🎮 για αυτή την εβδομάδα!' : '';
+        document.getElementById('cartoonEndMsg').innerText =
+            status.usedCartoon >= config.totalCartoon ? '⛔ Τελείωσε ο χρόνος 📺 για αυτή την εβδομάδα!' : '';
+    }
+
+    async function start(type) {
+        await fetch(`/api/time/start?type=${type}`, { method: 'POST' });
+        await loadStatus();
+    }
+
+    async function stopTimer(type) {
+        await fetch(`/api/time/stop?type=${type}`, { method: 'POST' });
+        await loadStatus();
+    }
+
+    setInterval(loadStatus, 2000);
+
+    async function addTime(type) {
+        const val = document.getElementById(type + 'Input').value;
+        if (!val) return;
+        const seconds = parseInt(val) * 60; // convert minutes → seconds
+        await fetch(`/api/time/update?type=${type}&seconds=${seconds}`, { method: 'POST' });
+        await loadStatus();
+    }
+
+    function restoreState() {
+        const saved = JSON.parse(localStorage.getItem('runningTimers') || '[]');
+        saved.forEach(type => start(type));
+    }
+
+    async function init() {
+        await loadConfig();
+        await loadStatus();
+        restoreState();
+    }
+
+    init();
+
+</script>
+</body>
+</html>
